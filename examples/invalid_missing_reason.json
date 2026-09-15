@@ -1,0 +1,14 @@
+{
+  "name": "Example with missing exclusion reason",
+  "population": ["task_001", "task_002", "task_003"],
+  "exclusions": [
+    {
+      "id": "task_002",
+      "reason": ""
+    }
+  ],
+  "included": ["task_001", "task_003"],
+  "successes": ["task_001"],
+  "pass_rate": 0.5,
+  "sentinels": []
+}
