@@ -1,0 +1,9 @@
+{
+  "name": "Example with sentinel as success",
+  "population": ["task_001", "task_002", "task_003"],
+  "exclusions": [],
+  "included": ["task_001", "task_002", "task_003"],
+  "successes": ["task_001", "TIMEOUT"],
+  "pass_rate": 0.6666666666666666,
+  "sentinels": ["TIMEOUT", "ERROR"]
+}
