@@ -4,18 +4,97 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**construct-lint** is a CI checker for evaluation **construct validity**: pass-rate (and similar) metrics must have a well-defined population, declared exclusions, and no silent sentinels that inflate scores.
+**construct-lint** is a CI checker for evaluation **construct validity** in pass-rate and accuracy metrics. It enforces that every reported score has a well-defined population, explicit exclusions with documented reasons, and no silent sentinels (like `TIMEOUT` or `ERROR`) counted as successes. When metrics manifests violate these rules, CI fails before inflated or misleading scores reach scoreboards, papers, or deployment decisions.
 
-## Why?
+## Public Use Cases
 
-When reporting evaluation metrics like pass rates or accuracy:
+### 1. Benchmark Scoreboard CI
 
-- **Silent exclusions** inflate scores (e.g., filtering "hard cases" without disclosure)
-- **Sentinel values** (`TIMEOUT`, `ERROR`, empty strings) counted as successes corrupt metrics
-- **Undefined populations** make comparisons meaningless
-- **Arithmetic drift** between declared and computed rates indicates bugs
+**Scenario**: You maintain a public leaderboard (e.g., SWE-bench, MMLU, HumanEval variants) and want to prevent submissions with silent exclusions or sentinel-inflated scores.
 
-`construct-lint` enforces construct validity in CI by failing builds when metrics manifests violate these rules.
+**Manifest**: `leaderboard_submission.json`
+```json
+{
+  "name": "team_x_swe_bench_lite",
+  "population": ["django__001", "django__002", "flask__001", "requests__001"],
+  "exclusions": [
+    {
+      "id": "flask__001",
+      "reason": "Timeout due to CI infrastructure failure (not model fault)"
+    }
+  ],
+  "included": ["django__001", "django__002", "requests__001"],
+  "successes": ["django__001", "requests__001"],
+  "pass_rate": 0.6666666666666666,
+  "sentinels": ["TIMEOUT", "ERROR", "INFRA_FAIL"]
+}
+```
+
+**CI check**:
+```bash
+construct-lint check leaderboard_submission.json
+# Exit 0 if valid, 1 if excluded tasks lack reasons or sentinels appear in successes
+```
+
+**Caught issues**: Missing exclusion reasons, sentinel values counted as passes, arithmetic drift (2/3 vs claimed 0.75).
+
+---
+
+### 2. Private Eval Suite Freeze Validation
+
+**Scenario**: Your team runs nightly evals on a frozen private benchmark. Before archiving results or comparing across model versions, you enforce that every exclusion is documented and the denominator is stable.
+
+**Manifest**: `nightly_run_2026_09_15.json`
+```json
+{
+  "name": "internal_coding_suite_v2.3",
+  "population": ["task_001", "task_002", "task_003", "task_004", "task_005"],
+  "exclusions": [
+    {
+      "id": "task_003",
+      "reason": "Flaky test environment (filed bug #1234)"
+    }
+  ],
+  "included": ["task_001", "task_002", "task_004", "task_005"],
+  "successes": ["task_001", "task_004", "task_005"],
+  "pass_rate": 0.75,
+  "sentinels": ["TIMEOUT", null, ""]
+}
+```
+
+**CI check**:
+```bash
+construct-lint check nightly_run_2026_09_15.json --json > validation.json
+```
+
+**Ensures**: No silent filters added (e.g., `hidden_exclude_hard_cases`), all excluded IDs have audit trail, pass-rate arithmetic is correct.
+
+---
+
+### 3. Meta-Harness Evolution: Metrics Hygiene
+
+**Scenario**: You're evolving an evaluation harness and want to prevent regressions where new error modes (e.g., `PARSE_ERROR`, `OOM`) accidentally inflate scores by being counted as successes instead of failures.
+
+**Manifest**: `harness_v3_smoke_test.json`
+```json
+{
+  "name": "harness_v3_migration_check",
+  "population": ["smoke_01", "smoke_02", "smoke_03"],
+  "exclusions": [],
+  "included": ["smoke_01", "smoke_02", "smoke_03"],
+  "successes": ["smoke_01", "smoke_02"],
+  "pass_rate": 0.6666666666666666,
+  "sentinels": ["TIMEOUT", "ERROR", "PARSE_ERROR", "OOM", null]
+}
+```
+
+**CI check**:
+```bash
+# In your harness test suite
+construct-lint check harness_v3_smoke_test.json || exit 1
+```
+
+**Prevents**: New sentinel values (e.g., `PARSE_ERROR`) from being silently counted as successes when the harness changes.
 
 ## Installation
 
@@ -204,6 +283,10 @@ pytest --cov=construct_lint --cov-report=term-missing
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
+
+## With failstrata
+
+If you're using [failstrata](https://github.com/cursor/failstrata) for stratified failure analysis, construct-lint provides a complementary layer: failstrata identifies *why* tasks fail (infra vs. agent fault), while construct-lint enforces that those stratifications are declared in your metrics manifests and don't silently inflate pass rates. Use both for rigorous eval hygiene.
 
 ## Contributing
 
